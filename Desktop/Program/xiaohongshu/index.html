@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书文章生成器</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            color: #ff2442;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 8px;
+        }
+        textarea {
+            width: 100%;
+            min-height: 150px;
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            background-color: #ff2442;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #ff5c7c;
+        }
+        .voice-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .voice-item {
+            background-color: #ff2442;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+        }
+        .voice-item:hover {
+            background-color: #ff5c7c;
+        }
+        .voice-item .delete-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .file-upload {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .file-upload input[type="file"] {
+            display: none;
+        }
+        .file-upload label {
+            background-color: #ff2442;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .file-upload label:hover {
+            background-color: #ff5c7c;
+        }
+        .file-name {
+            color: #666;
+        }
+    </style>
+    <script src="https://unpkg.com/mammoth@1.4.21/mammoth.browser.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>🌸 小红书文章生成器</h1>
+
+        <div class="section">
+            <h2>1. 口吻学习区</h2>
+            <textarea id="voiceReference" placeholder="请粘贴已有的文章，让AI学习文风和语气"></textarea>
+            
+            <div class="file-upload">
+                <input type="file" id="wordFileUpload" accept=".docx,.doc" onchange="handleWordFileUpload(event)">
+                <label for="wordFileUpload">📄 上传Word文件</label>
+                <span id="fileName" class="file-name"></span>
+            </div>
+            
+            <div class="voice-list" id="voiceList"></div>
+            
+            <div>
+                <input type="text" id="voiceName" placeholder="为这个口吻起个名字（可选）">
+                <button onclick="saveVoice()">保存口吻</button>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>2. 文章生成配置</h2>
+            <input type="text" id="articleTitle" placeholder="请输入文章标题">
+            <textarea id="articleContent" placeholder="请输入文章主要内容或关键点"></textarea>
+        </div>
+
+        <div class="section">
+            <h2>3. AI生成结果</h2>
+            <div id="generatedResult"></div>
+        </div>
+
+        <button onclick="generateArticle()">生成小红书文章</button>
+    </div>
+
+    <script>
+        const DEEPSEEK_API_KEY = 'sk-37278f0d2d0f42e19f0d2a728527ff0e';
+        const VOICES_STORAGE_KEY = 'xiaohongshu_voices';
+
+        // 页面加载时初始化口吻列表
+        document.addEventListener('DOMContentLoaded', loadVoices);
+
+        function handleWordFileUpload(event) {
+            const file = event.target.files[0];
+            const fileName = document.getElementById('fileName');
+            const voiceReference = document.getElementById('voiceReference');
+
+            if (file) {
+                fileName.textContent = file.name;
+                
+                // 使用mammoth解析Word文件
+                mammoth.extractRawText({path: file})
+                    .then(function(result) {
+                        voiceReference.value = result.value;
+                    })
+                    .catch(function(error) {
+                        console.error('Word文件解析错误', error);
+                        alert('Word文件解析失败，请检查文件格式');
+                    });
+            }
+        }
+
+        function saveVoice() {
+            const voiceReference = document.getElementById('voiceReference').value.trim();
+            const voiceName = document.getElementById('voiceName').value.trim() || `口吻 ${new Date().toLocaleString()}`;
+
+            if (!voiceReference) {
+                alert('请先输入口吻内容');
+                return;
+            }
+
+            // 获取现有的口吻列表
+            let voices = JSON.parse(localStorage.getItem(VOICES_STORAGE_KEY) || '[]');
+            
+            // 检查是否已存在相同内容的口吻
+            const existingVoice = voices.find(v => v.content === voiceReference);
+            if (existingVoice) {
+                alert('这个口吻已经存在');
+                return;
+            }
+
+            // 添加新口吻
+            voices.push({
+                name: voiceName,
+                content: voiceReference,
+                createdAt: new Date().toISOString()
+            });
+
+            localStorage.setItem(VOICES_STORAGE_KEY, JSON.stringify(voices));
+            
+            // 清空输入框
+            document.getElementById('voiceReference').value = '';
+            document.getElementById('voiceName').value = '';
+            document.getElementById('fileName').textContent = '';
+            document.getElementById('wordFileUpload').value = '';
+
+            // 重新加载口吻列表
+            loadVoices();
+        }
+
+        function loadVoices() {
+            const voiceList = document.getElementById('voiceList');
+            const voices = JSON.parse(localStorage.getItem(VOICES_STORAGE_KEY) || '[]');
+
+            // 清空现有列表
+            voiceList.innerHTML = '';
+
+            voices.forEach((voice, index) => {
+                const voiceItem = document.createElement('div');
+                voiceItem.className = 'voice-item';
+                voiceItem.innerHTML = `
+                    <span onclick="selectVoice('${index}')">${voice.name}</span>
+                    <button class="delete-btn" onclick="deleteVoice('${index}')">✖</button>
+                `;
+                voiceList.appendChild(voiceItem);
+            });
+        }
+
+        function selectVoice(index) {
+            const voices = JSON.parse(localStorage.getItem(VOICES_STORAGE_KEY) || '[]');
+            const selectedVoice = voices[index];
+            
+            if (selectedVoice) {
+                document.getElementById('voiceReference').value = selectedVoice.content;
+            }
+        }
+
+        function deleteVoice(index) {
+            let voices = JSON.parse(localStorage.getItem(VOICES_STORAGE_KEY) || '[]');
+            voices.splice(index, 1);
+            localStorage.setItem(VOICES_STORAGE_KEY, JSON.stringify(voices));
+            loadVoices();
+        }
+
+        async function generateArticle() {
+            const voiceReference = document.getElementById('voiceReference').value;
+            const articleTitle = document.getElementById('articleTitle').value;
+            const articleContent = document.getElementById('articleContent').value;
+            const resultDiv = document.getElementById('generatedResult');
+
+            if (!articleTitle || !articleContent) {
+                alert('请填写文章标题和内容');
+                return;
+            }
+
+            resultDiv.innerHTML = '正在生成文章，请稍候...';
+
+            try {
+                const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: "deepseek-chat",
+                        messages: [
+                            {
+                                role: "system", 
+                                content: `你是一个专业的小红书文案写手。请根据以下参考口吻和内容，生成一篇吸引人的小红书文章。参考口吻：${voiceReference}`
+                            },
+                            {
+                                role: "user", 
+                                content: `文章标题：${articleTitle}，文章主要内容：${articleContent}`
+                            }
+                        ],
+                        temperature: 0.7
+                    })
+                });
+
+                const data = await response.json();
+                const generatedText = data.choices[0].message.content;
+
+                resultDiv.innerHTML = `
+                    <h3>🌟 生成的小红书文章</h3>
+                    <p>${generatedText}</p>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `生成失败：${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html> 
